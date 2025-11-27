@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chat Room</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: Arial, sans-serif; background: #f0f2f5; height: 100vh; }
+        .chat-container {
+            display: flex; 
+            flex-direction: column; 
+            height: 100vh; 
+            max-width: 800px; 
+            margin: 0 auto; 
+            background: white; 
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+        }
+        .header {
+            background: #667eea; 
+            color: white; 
+            padding: 1rem; 
+            display: flex; 
+            justify-content: space-between; 
+            align-items: center;
+        }
+        .room-info { display: flex; align-items: center; gap: 1rem; }
+        .room-id {
+            background: rgba(255,255,255,0.2); 
+            padding: 0.5rem 1rem; 
+            border-radius: 20px; 
+            font-weight: bold;
+        }
+        .users-count {
+            background: rgba(255,255,255,0.2); 
+            padding: 0.5rem; 
+            border-radius: 50%; 
+            width: 30px; 
+            height: 30px; 
+            display: flex; 
+            align-items: center; 
+            justify-content: center;
+        }
+        .messages {
+            flex: 1; 
+            padding: 1rem; 
+            overflow-y: auto; 
+            display: flex; 
+            flex-direction: column; 
+            gap: 1rem;
+        }
+        .message {
+            max-width: 70%; 
+            padding: 0.75rem; 
+            border-radius: 10px; 
+            position: relative;
+        }
+        .message.own {
+            align-self: flex-end; 
+            background: #667eea; 
+            color: white;
+        }
+        .message.other {
+            align-self: flex-start; 
+            background: #f1f1f1; 
+            color: #333;
+        }
+        .message-header {
+            font-size: 0.8rem; 
+            margin-bottom: 0.25rem; 
+            opacity: 0.8;
+        }
+        .input-area {
+            padding: 1rem; 
+            border-top: 1px solid #eee; 
+            display: flex; 
+            gap: 0.5rem;
+        }
+        .message-input {
+            flex: 1; 
+            padding: 0.75rem; 
+            border: 2px solid #ddd; 
+            border-radius: 25px; 
+            outline: none;
+        }
+        .message-input:focus { border-color: #667eea; }
+        .send-btn {
+            padding: 0.75rem 1.5rem; 
+            background: #667eea; 
+            color: white; 
+            border: none; 
+            border-radius: 25px; 
+            cursor: pointer;
+        }
+        .send-btn:hover { background: #5a6fd8; }
+        .notification {
+            align-self: center; 
+            background: #f8f9fa; 
+            color: #666; 
+            padding: 0.5rem 1rem; 
+            border-radius: 15px; 
+            font-size: 0.9rem; 
+            font-style: italic;
+        }
+    </style>
+</head>
+<body>
+    <div class="chat-container">
+        <div class="header">
+            <div class="room-info">
+                <h2>Chat Room</h2>
+                <div class="room-id" id="roomIdDisplay">Loading...</div>
+                <div class="users-count" id="usersCount">0</div>
+            </div>
+            <button onclick="leaveRoom()" style="background: transparent; border: 1px solid white; color: white; padding: 0.5rem 1rem; border-radius: 5px; cursor: pointer;">
+                Leave Room
+            </button>
+        </div>
+        <div class="messages" id="messagesContainer">
+            <div class="notification">Loading messages...</div>
+        </div>
+        <div class="input-area">
+            <input type="text" id="messageInput" class="message-input" placeholder="Type your message..." onkeypress="handleKeyPress(event)">
+            <button class="send-btn" onclick="sendMessage()">Send</button>
+        </div>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        const socket = io();
+        const roomId = window.location.pathname.split('/').pop();
+        let currentUsername = '';
+        
+        socket.emit('join-room', { 
+            roomId, 
+            username: sessionStorage.getItem('username') || 'Anonymous' 
+        });
+        
+        socket.on('room-joined', (data) => {
+            currentUsername = data.users.find(user => user === (sessionStorage.getItem('username') || 'Anonymous'));
+            document.getElementById('roomIdDisplay').textContent = data.roomId;
+            document.getElementById('usersCount').textContent = data.users.length;
+            
+            const messagesContainer = document.getElementById('messagesContainer');
+            messagesContainer.innerHTML = '';
+            
+            data.messages.forEach(msg => {
+                displayMessage(msg);
+            });
+        });
+        
+        socket.on('new-message', (messageData) => {
+            displayMessage(messageData);
+        });
+        
+        socket.on('user-joined', (username) => {
+            displayNotification(`${username} joined the room`);
+            updateUsersCount(1);
+        });
+        
+        socket.on('user-left', (username) => {
+            displayNotification(`${username} left the room`);
+            updateUsersCount(-1);
+        });
+        
+        function displayMessage(messageData) {
+            const messagesContainer = document.getElementById('messagesContainer');
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${messageData.username === currentUsername ? 'own' : 'other'}`;
+            
+            messageDiv.innerHTML = `
+                <div class="message-header">
+                    ${messageData.username} • ${messageData.timestamp}
+                </div>
+                <div class="message-content">${messageData.message}</div>
+            `;
+            
+            messagesContainer.appendChild(messageDiv);
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        }
+        
+        function displayNotification(text) {
+            const messagesContainer = document.getElementById('messagesContainer');
+            const notificationDiv = document.createElement('div');
+            notificationDiv.className = 'notification';
+            notificationDiv.textContent = text;
+            
+            messagesContainer.appendChild(notificationDiv);
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        }
+        
+        function updateUsersCount(change) {
+            const usersCountElement = document.getElementById('usersCount');
+            const currentCount = parseInt(usersCountElement.textContent);
+            usersCountElement.textContent = currentCount + change;
+        }
+        
+        function sendMessage() {
+            const messageInput = document.getElementById('messageInput');
+            const message = messageInput.value.trim();
+            
+            if (message) {
+                socket.emit('send-message', {
+                    roomId,
+                    message,
+                    username: currentUsername
+                });
+                messageInput.value = '';
+            }
+        }
+        
+        function handleKeyPress(event) {
+            if (event.key === 'Enter') {
+                sendMessage();
+            }
+        }
+        
+        function leaveRoom() {
+            window.location.href = '/';
+        }
+        
+        window.addEventListener('beforeunload', () => {
+            if (currentUsername) {
+                sessionStorage.setItem('username', currentUsername);
+            }
+        });
+    </script>
+</body>
+</html>
